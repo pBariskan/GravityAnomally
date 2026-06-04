@@ -1,0 +1,25 @@
+---
+description: Commit and push to GitHub after completing each task
+alwaysApply: true
+---
+
+# Git workflow on task completion
+
+When you finish a task (feature, fix, refactor, setup, or any meaningful change), **always commit and push** to GitHub before considering the work done.
+
+## After completing work
+
+1. Run `git status`, `git diff`, and `git log -1` to review changes and match commit message style.
+2. Stage only relevant files (never commit secrets: `.env`, credentials, API keys).
+3. Commit with a clear message focused on **why** (use HEREDOC for the message).
+4. Push to `origin` on the current branch (`git push` or `git push -u origin <branch>` if upstream is not set).
+
+## When to skip
+
+- No file changes were made (question-only or explanation-only turns).
+- The user explicitly says not to commit or push for that task.
+- Push would fail due to auth or conflicts — report the issue and what the user should do; do not force-push unless explicitly requested.
+
+## Remote
+
+Default remote: `https://github.com/pBariskan/GravityAnomally.git` (`origin`).
