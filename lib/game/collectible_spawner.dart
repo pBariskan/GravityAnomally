@@ -3,6 +3,7 @@ import 'dart:math';
 import '../config/game_config.dart';
 import 'entities.dart';
 import 'path_calculator.dart';
+
 class CollectibleSpawner {
   CollectibleSpawner(this._rng);
 
@@ -14,7 +15,8 @@ class CollectibleSpawner {
     required double playerX,
     required double playerY,
     required double playerVy,
-    required double gravitySigned,
+    required double gravitySign,
+    required double gravityStrength,
     required double forwardSpeed,
     required double floorY,
     required double ceilingY,
@@ -28,14 +30,14 @@ class CollectibleSpawner {
     if (distance < 80 || distance > 520) return null;
 
     final viable = PathCalculator.viableYPositions(
-      playHeight: ceilingY - floorY,
       floorY: floorY,
       ceilingY: ceilingY,
       gapTop: wall.gapTop,
       gapBottom: wall.gapBottom,
       startY: playerY,
       startVy: playerVy,
-      gravitySigned: gravitySigned,
+      gravitySign: gravitySign,
+      gravityStrength: gravityStrength,
       distanceToGap: distance,
       forwardSpeed: forwardSpeed,
     );

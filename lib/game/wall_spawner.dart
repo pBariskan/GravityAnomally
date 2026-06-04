@@ -13,9 +13,7 @@ class WallSpawner {
     this.mirror = false,
   })  : _rng = rng,
         _floorY = GameConfig.floorPadding,
-        _ceilingY = playHeight - GameConfig.ceilingPadding {
-    _resetSpawnCursor();
-  }
+        _ceilingY = playHeight - GameConfig.ceilingPadding;
 
   final WorldId world;
   final double playHeight;
@@ -27,41 +25,20 @@ class WallSpawner {
   final double _ceilingY;
 
   int _wallCount = 0;
-  late double _nextSpawnX;
-  double _spacing = GameConfig.wallSpacing;
   double _viralShrink = 0;
   double _runOscillationPhase = 0;
 
   double get viralShrink => _viralShrink;
 
-  void _resetSpawnCursor() {
-    _nextSpawnX = mirror
-        ? playWidth + GameConfig.firstWallOffset
-        : GameConfig.firstWallOffset;
-  }
-
-  List<WallSegment> spawnPending(double cameraMaxX) {
-    final spawned = <WallSegment>[];
-    if (mirror) {
-      while (_nextSpawnX > playWidth - 120) {
-        spawned.add(_createWall(_nextSpawnX));
-        _advanceAfterSpawn();
-        _nextSpawnX -= _spacing;
-      }
-    } else {
-      while (_nextSpawnX < cameraMaxX + playWidth * 1.5) {
-        spawned.add(_createWall(_nextSpawnX));
-        _advanceAfterSpawn();
-        _nextSpawnX += _spacing;
-      }
-    }
-    return spawned;
+  /// Spawns one wall at [x] (off-screen ahead of the player in normal mode).
+  WallSegment spawnAt(double x) {
+    final wall = _createWall(x);
+    _advanceAfterSpawn();
+    return wall;
   }
 
   void _advanceAfterSpawn() {
     _wallCount++;
-    _spacing *= GameConfig.wallFrequencyRampPerWall;
-    _spacing = _spacing.clamp(180.0, GameConfig.wallSpacing);
     if (world == WorldId.viral &&
         _wallCount % GameConfig.viralShrinkEveryNWalls == 0) {
       _viralShrink += GameConfig.viralGapShrinkAmount;
@@ -104,11 +81,9 @@ class WallSpawner {
 
   void reset() {
     _wallCount = 0;
-    _spacing = GameConfig.wallSpacing;
     _viralShrink = 0;
     _runOscillationPhase = 0;
     _activeOceanWalls.clear();
-    _resetSpawnCursor();
   }
 
   /// Deep Ocean: gap drifts while the wall approaches the player.

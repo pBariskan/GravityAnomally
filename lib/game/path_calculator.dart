@@ -3,20 +3,21 @@ import '../config/game_config.dart';
 /// Estimates viable Y positions through an upcoming gap using deterministic physics.
 class PathCalculator {
   static List<double> viableYPositions({
-    required double playHeight,
     required double floorY,
     required double ceilingY,
     required double gapTop,
     required double gapBottom,
     required double startY,
     required double startVy,
-    required double gravitySigned,
+    required double gravitySign,
+    required double gravityStrength,
     required double distanceToGap,
     required double forwardSpeed,
     int samples = 12,
   }) {
     final timeToGap = distanceToGap / forwardSpeed;
     final viable = <double>{};
+    final margin = GameConfig.pathGapMargin;
 
     for (var flips = 0; flips <= 2; flips++) {
       final flipTimes = _flipSchedules(timeToGap, flips, samples);
@@ -24,13 +25,14 @@ class PathCalculator {
         final y = _simulateY(
           startY: startY,
           startVy: startVy,
-          gravitySigned: gravitySigned,
+          gravitySign: gravitySign,
+          gravityStrength: gravityStrength,
           floorY: floorY,
           ceilingY: ceilingY,
           duration: timeToGap,
           flipTimes: schedule,
         );
-        if (y >= gapTop + 12 && y <= gapBottom - 12) {
+        if (y >= gapTop + margin && y <= gapBottom - margin) {
           viable.add(y);
         }
       }
@@ -40,6 +42,53 @@ class PathCalculator {
       viable.add((gapTop + gapBottom) / 2);
     }
     return viable.toList();
+  }
+
+  /// Smallest flip count (0–2) needed from a nominal corridor start to enter the gap.
+  static int minFlipsForGap({
+    required double floorY,
+    required double ceilingY,
+    required double gapTop,
+    required double gapBottom,
+    required double gravityStrength,
+    double travelTimeSeconds = 2.0,
+    int samples = 12,
+  }) {
+    final startY = (floorY + ceilingY) / 2;
+    final margin = GameConfig.pathGapMargin;
+    var worst = 0;
+
+    for (final gravitySign in [-1.0, 1.0]) {
+      var minForSign = 3;
+      for (var flips = 0; flips <= 2; flips++) {
+        final flipTimes = _flipSchedules(travelTimeSeconds, flips, samples);
+        var reachable = false;
+        for (final schedule in flipTimes) {
+          final y = _simulateY(
+            startY: startY,
+            startVy: 0,
+            gravitySign: gravitySign,
+            gravityStrength: gravityStrength,
+            floorY: floorY,
+            ceilingY: ceilingY,
+            duration: travelTimeSeconds,
+            flipTimes: schedule,
+          );
+          if (y >= gapTop + margin && y <= gapBottom - margin) {
+            reachable = true;
+            break;
+          }
+        }
+        if (reachable) {
+          minForSign = flips;
+          break;
+        }
+      }
+      final required = minForSign == 3 ? 2 : minForSign;
+      if (required > worst) worst = required;
+    }
+
+    return worst;
   }
 
   static List<List<double>> _flipSchedules(
@@ -66,7 +115,8 @@ class PathCalculator {
   static double _simulateY({
     required double startY,
     required double startVy,
-    required double gravitySigned,
+    required double gravitySign,
+    required double gravityStrength,
     required double floorY,
     required double ceilingY,
     required double duration,
@@ -75,16 +125,17 @@ class PathCalculator {
   }) {
     var y = startY;
     var vy = startVy;
-    var g = gravitySigned;
+    var gSign = gravitySign;
     var t = 0.0;
     var flipIndex = 0;
 
     while (t < duration) {
       if (flipIndex < flipTimes.length && t >= flipTimes[flipIndex]) {
-        g = -g;
-        vy = -vy;
+        gSign = -gSign;
+        vy = -gSign * GameConfig.flipVelocity;
         flipIndex++;
       }
+      final g = gSign * gravityStrength;
       vy += g * dt;
       y += vy * dt;
       y = y.clamp(floorY + 8, ceilingY - 8);

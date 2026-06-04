@@ -1,4 +1,7 @@
+enum CollisionKind { wall, collectible }
+
 class WallSegment {
+  static const CollisionKind collisionKind = CollisionKind.wall;
   WallSegment({
     required this.x,
     required this.gapTop,
@@ -13,16 +16,19 @@ class WallSegment {
   double gapTop;
   double gapBottom;
 
-  bool get passed => x + width < 0;
+  bool passedBehind(double playerX, [double margin = 0]) =>
+      x + width < playerX - margin;
 
+  /// Solid pillars only — the gap is safe.
   bool collidesCircle(double cx, double cy, double radius) {
     if (cx + radius < x || cx - radius > x + width) return false;
-    if (cy - radius < gapTop || cy + radius > gapBottom) return false;
+    if (cy - radius >= gapTop && cy + radius <= gapBottom) return false;
     return true;
   }
 }
 
 class CollectibleOrb {
+  static const CollisionKind collisionKind = CollisionKind.collectible;
   CollectibleOrb({
     required this.x,
     required this.y,
@@ -35,11 +41,11 @@ class CollectibleOrb {
   final bool safe;
   bool collected;
 
-  bool intersects(double cx, double cy, double playerR) {
+  bool intersects(double cx, double cy, double playerR, double orbRadius) {
     if (collected) return false;
     final dx = x - cx;
     final dy = y - cy;
-    const r = 10.0;
-    return dx * dx + dy * dy < (playerR + r) * (playerR + r);
+    final sum = playerR + orbRadius;
+    return dx * dx + dy * dy < sum * sum;
   }
 }

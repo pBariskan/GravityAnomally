@@ -9,6 +9,7 @@ import '../models/game_event.dart';
 import '../models/world_id.dart';
 import '../services/achievement_service.dart';
 import 'collectible_spawner.dart';
+import 'difficulty_curve.dart';
 import 'entities.dart';
 import 'wall_spawner.dart';
 
@@ -25,13 +26,13 @@ class GameController extends ChangeNotifier {
   late WallSpawner _wallSpawner;
   late CollectibleSpawner _collectibleSpawner;
 
-  // Physics — never buffed by progression
-  double get _gravityMag => GameConfig.gravityForWorld(world);
-  double get _forwardSpeed {
-    var s = GameConfig.forwardSpeed;
-    if (challenge == ChallengeMode.speedRun) s *= GameConfig.speedRunMultiplier;
-    return s;
-  }
+  double get _gravityStrength => GameConfig.gravityForWorld(world);
+
+  double get _speedMultiplier =>
+      challenge == ChallengeMode.speedRun ? GameConfig.speedRunMultiplier : 1;
+
+  double get _forwardSpeed =>
+      DifficultyCurve.forwardSpeed(runProgress, speedMultiplier: _speedMultiplier);
 
   final bool mirrorMode;
   bool get _mirror => challenge == ChallengeMode.mirror;
@@ -66,6 +67,7 @@ class GameController extends ChangeNotifier {
   double blindFlashTimer = 0;
   double blindFlashRemaining = 0;
   double _nextBlindFlashIn = 3;
+  double _nextSpawnX = 0;
 
   final List<WallSegment> walls = [];
   final List<CollectibleOrb> orbs = [];
@@ -135,20 +137,47 @@ class GameController extends ChangeNotifier {
     droppedToMoleculeAfterOrganism = false;
     peakTierThisRun = EvolutionTier.molecule;
     _wallSpawner.reset();
+    _resetSpawnCursor();
     _spawnInitial();
     achievementService.handleEvent(RunStartedEvent());
   }
 
+  void _resetSpawnCursor() {
+    _nextSpawnX = _mirror
+        ? -GameConfig.wallSpawnBeyondScreen
+        : playWidth + GameConfig.wallSpawnBeyondScreen;
+  }
+
   void _spawnInitial() {
-    final spawned = _wallSpawner.spawnPending(playWidth * 2);
-    walls.addAll(spawned);
+    _spawnWallAt(_nextSpawnX);
+    _advanceSpawnCursor();
+  }
+
+  double _wallSpacing() => DifficultyCurve.wallSpacing(
+        runProgress: runProgress,
+        speed: _forwardSpeed,
+        world: world,
+        floorY: floorY,
+        ceilingY: ceilingY,
+        viralShrink: _wallSpawner.viralShrink,
+      );
+
+  void _advanceSpawnCursor() {
+    final spacing = _wallSpacing();
+    _nextSpawnX = _mirror ? _nextSpawnX - spacing : _nextSpawnX + spacing;
+  }
+
+  void _spawnWallAt(double x) {
+    final w = _wallSpawner.spawnAt(x);
+    walls.add(w);
+    _wallSpawner.trackOceanWall(w);
   }
 
   void flipGravity() {
     if (phase != GamePhase.playing) return;
     if (world == WorldId.neural && flipCooldownRemaining > 0) return;
     gravitySign = -gravitySign;
-    velocityY = -velocityY;
+    velocityY = -gravitySign * GameConfig.flipVelocity;
     if (world == WorldId.neural) {
       flipCooldownRemaining = GameConfig.neuralFlipCooldown;
       flipReady = false;
@@ -193,7 +222,7 @@ class GameController extends ChangeNotifier {
     }
 
     // Physics
-    final g = gravitySign * _gravityMag;
+    final g = gravitySign * _gravityStrength;
     velocityY += g * dt;
     playerY += velocityY * dt;
 
@@ -203,6 +232,7 @@ class GameController extends ChangeNotifier {
       return;
     }
 
+    _tickWallSpawner();
     _scrollWorld(dt);
     _checkCollisions();
     _trySpawnContent();
@@ -228,6 +258,25 @@ class GameController extends ChangeNotifier {
     }
   }
 
+  void _tickWallSpawner() {
+    if (phase != GamePhase.playing) return;
+
+    final lookahead =
+        playWidth * GameConfig.wallSpawnLookaheadPlayWidths;
+
+    if (_mirror) {
+      while (_nextSpawnX > -lookahead) {
+        _spawnWallAt(_nextSpawnX);
+        _advanceSpawnCursor();
+      }
+    } else {
+      while (_nextSpawnX < playWidth + lookahead) {
+        _spawnWallAt(_nextSpawnX);
+        _advanceSpawnCursor();
+      }
+    }
+  }
+
   void _scrollWorld(double dt) {
     final dx = _forwardSpeed * dt;
     final sign = _mirror ? 1 : -1;
@@ -238,7 +287,9 @@ class GameController extends ChangeNotifier {
       o.x += dx * sign;
     }
     walls.removeWhere((w) {
-      final remove = _mirror ? w.x > playWidth + 80 : w.passed;
+      final remove = _mirror
+          ? w.x > playWidth + 80
+          : w.passedBehind(playerX, GameConfig.wallDespawnBehindPlayer);
       if (remove) _wallSpawner.pruneOceanWalls((x) => x == w);
       return remove;
     });
@@ -247,14 +298,6 @@ class GameController extends ChangeNotifier {
     );
 
     _wallSpawner.updateOceanGaps(_forwardSpeed, dt);
-
-    final spawned = _wallSpawner.spawnPending(
-      _mirror ? -GameConfig.firstWallOffset : playWidth,
-    );
-    for (final w in spawned) {
-      walls.add(w);
-      _wallSpawner.trackOceanWall(w);
-    }
   }
 
   void _trySpawnContent() {
@@ -268,7 +311,8 @@ class GameController extends ChangeNotifier {
         playerX: playerX,
         playerY: playerY,
         playerVy: velocityY,
-        gravitySigned: gravitySign * _gravityMag,
+        gravitySign: gravitySign,
+        gravityStrength: _gravityStrength,
         forwardSpeed: _forwardSpeed,
         floorY: floorY,
         ceilingY: ceilingY,
@@ -289,7 +333,13 @@ class GameController extends ChangeNotifier {
     }
 
     for (final o in orbs) {
-      if (o.intersects(playerX, playerY, _playerRadius)) {
+      if (o.collected) continue;
+      if (o.intersects(
+        playerX,
+        playerY,
+        _playerRadius,
+        GameConfig.collectibleRadius,
+      )) {
         o.collected = true;
         _onCollectible();
       }

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import '../models/evolution_tier.dart';
 import '../models/world_id.dart';
 
@@ -6,8 +8,17 @@ class GameConfig {
   GameConfig._();
 
   // --- Baseline physics (World 1 / Microverse) ---
-  static const double gravityMagnitude = 9.8;
-  static const double forwardSpeed = 220.0; // px/s, world scrolls left
+  /// Forward speed at run start / end (px/s); [DifficultyCurve] eases between them.
+  static const double forwardSpeedStart = 130.0;
+  static const double forwardSpeedEnd = 220.0;
+  /// Ease exponent on run progress (>1 keeps early run slower longer).
+  static const double difficultyEaseExponent = 2.0;
+
+  /// Tuned so one flip arc ≈ 0.4× base gap height (see difficulty_curve tests).
+  static const double gravityStrength = 1400.0; // px/s²
+  /// Instant Y velocity on flip; sign combines with gravity direction after flip.
+  static const double flipVelocity = -520.0;
+
   static const double playerXRatio = 0.22; // fraction of playfield width
 
   static const double floorPadding = 48.0;
@@ -16,6 +27,11 @@ class GameConfig {
   static const double playerBaseRadius = 14.0;
   static const double morphPopDuration = 0.35;
   static const double morphShrinkDuration = 0.25;
+
+  // --- Difficulty curve ---
+  /// Extra seconds of timing slack when deriving minimum wall spacing.
+  static const double flipTimingSlackSeconds = 0.15;
+  static const double pathGapMargin = 12.0;
 
   // --- Evolution ---
   static const int collectiblesPerTier = 10;
@@ -26,9 +42,14 @@ class GameConfig {
   static const double wallWidth = 28.0;
   static const double baseGapHeight = 140.0;
   static const double minGapHeight = 72.0;
-  static const double wallSpacing = 320.0;
-  static const double firstWallOffset = 480.0;
-  static const double wallFrequencyRampPerWall = 0.92; // spacing multiplier, decreases over run
+  /// Desired seconds between walls at run start / end (spacing = speed × interval).
+  static const double wallSpawnIntervalStart = 2.5;
+  static const double wallSpawnIntervalMin = 1.2;
+  /// Spawn X offset beyond the right screen edge (normal mode).
+  static const double wallSpawnBeyondScreen = 64.0;
+  static const double wallDespawnBehindPlayer = 48.0;
+  /// How far ahead of the screen edge to keep spawning walls (× playWidth).
+  static const double wallSpawnLookaheadPlayWidths = 1.5;
 
   // --- Collectibles ---
   static const double collectibleRadius = 10.0;
@@ -64,10 +85,34 @@ class GameConfig {
   static double gravityForWorld(WorldId world) {
     switch (world) {
       case WorldId.cosmic:
-        return gravityMagnitude * cosmicGravityMultiplier;
+        return gravityStrength * cosmicGravityMultiplier;
       default:
-        return gravityMagnitude;
+        return gravityStrength;
     }
+  }
+
+  static double easedProgress(double runProgress) {
+    final p = runProgress.clamp(0.0, 1.0);
+    return math.pow(p, difficultyEaseExponent).toDouble();
+  }
+
+  static double forwardSpeedForProgress(double runProgress) {
+    final t = easedProgress(runProgress);
+    return forwardSpeedStart + t * (forwardSpeedEnd - forwardSpeedStart);
+  }
+
+  /// Desired wall spawn interval (seconds) for current run progress [0, 1].
+  static double wallSpawnIntervalForProgress(double runProgress) {
+    final t = easedProgress(runProgress);
+    return wallSpawnIntervalStart +
+        t * (wallSpawnIntervalMin - wallSpawnIntervalStart);
+  }
+
+  /// Minimum seconds between flips at given gravity (one full velocity reversal).
+  static double minFlipPeriodSeconds(double gravityMagnitude) {
+    final g = gravityMagnitude.abs();
+    if (g <= 0) return 0;
+    return 2 * flipVelocity.abs() / g;
   }
 
   static double gapHeightForWorld(WorldId world, {double viralShrink = 0}) {
